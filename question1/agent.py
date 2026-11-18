@@ -59,18 +59,19 @@ class SupportCopilot:
         order = get_order(ticket["order_id"])
         thread = format_thread(ticket)
         snapshot = json.dumps(order, indent=2)
-
+        
         system = "\n\n".join(
             [
-                f"Run id {uuid.uuid4()}",
+                # f"Run id {uuid.uuid4()}",
                 "You are ShopAssist, the Tier-1 customer support copilot.",
                 _FEW_SHOT,
                 "HELP CENTER:",
                 all_articles_blob(),
-                (
-                    "Instructions: Think step by step. Write full reasoning, quote any article "
-                    "you rely on, then output JSON with action, kb_article, customer_reply."
-                ),
+                # (
+                #     "Instructions: Think step by step. Write full reasoning, quote any article "
+                #     "you rely on, then output JSON with action, kb_article, customer_reply."
+                # ),
+                ("Instructions: Output JSON with action, kb_article, and customer_reply. Do not add any other text.")
             ]
         )
         user = "\n\n".join(
@@ -84,5 +85,6 @@ class SupportCopilot:
 
     def handle_ticket(self, ticket_id: str) -> TicketResolution:
         messages = self.build_messages(ticket_id)
-        completion = self.llm.chat("handle_ticket", messages)
+        cached_prefix = f"SYSTEM:\n{messages[0].content}"
+        completion = self.llm.chat("handle_ticket", messages, cached_prefix=cached_prefix)
         return parse_resolution(completion)

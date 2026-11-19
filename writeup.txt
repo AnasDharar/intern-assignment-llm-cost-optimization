@@ -1,0 +1,150 @@
+Question 1: Single Call per Ticket (question1/agent.py)
+
+Target: <= 3000 points per ticket
+
+CHANGES DONE:
+1. Removed uuid (Run id uuid.uuid4()) which broke prefix stability across calls.
+2. Removed instructions that triggered verbose output ("think step by step", "write full reasoning", "quote any article").
+3. Added cached_prefix parameter (f"SYSTEM:\n{messages[0].content}"). It was not triggered because the prompt is under the 1024 token threshold, but follows caching architecture.
+
+Before:
+{
+  "resolutions": [
+    {
+      "ticket_id": "T-1001",
+      "action": "REFUND",
+      "kb_article": "returns-within-30-days"
+    },
+    {
+      "ticket_id": "T-1002",
+      "action": "SEND_ARTICLE",
+      "kb_article": "digital-license-no-refund"
+    },
+    {
+      "ticket_id": "T-1003",
+      "action": "ESCALATE_TIER2",
+      "kb_article": "custom-items-no-replace"
+    },
+    {
+      "ticket_id": "T-1004",
+      "action": "REPLACE",
+      "kb_article": "damage-replacement-7-days"
+    }
+  ],
+  "total_points": 35295
+}
+==> per ticket points = 8824
+
+After:
+{
+  "resolutions": [
+    {
+      "ticket_id": "T-1001",
+      "action": "REFUND",
+      "kb_article": "returns-within-30-days"
+    },
+    {
+      "ticket_id": "T-1002",
+      "action": "SEND_ARTICLE",
+      "kb_article": "digital-license-no-refund"
+    },
+    {
+      "ticket_id": "T-1003",
+      "action": "ESCALATE_TIER2",
+      "kb_article": "custom-items-no-replace"
+    },
+    {
+      "ticket_id": "T-1004",
+      "action": "REPLACE",
+      "kb_article": "damage-replacement-7-days"
+    }
+  ],
+  "total_points": 8154
+}
+
+
+=== Question 1 Cost Breakdown (T-1001) ===
+Input tokens:        490 (pts: 1470)
+Cached prefix:       0 (pts: 0)
+Output tokens:       46 (pts: 690)
+Total points:        2160
+
+
+-----------------------------------------------------------------------------
+
+Question 2: Pipeline Optimization (question2/agent.py)
+
+
+Target: <= 2500 points per ticket
+
+CHANGES DONE:
+1. Removed expanded_help_center_blob() function in __init__() (had an unnecessary long 210k+ token string created in a loop).
+
+- triage:
+Made it rule based in Python instead of an LLM call.
+
+- retrieve:
+Switched to direct retrieval (KB dumping of compact all_articles_blob).
+Using vector-based RAG will be better in production.
+
+- compose:
+Removed duplicate triage (TRIAGE AGAIN).
+System prompt changed to make JSON instructions concise and avoid verbose triggers.
+
+- audit:
+Compose is already creating JSON. Making another LLM call for creating JSON is unnecessary, so removed the LLM call. We just need to verify the JSON.
+In audit, validation of schema and checking edge cases/allowed actions can be done in Python for production.
+
+Before:
+Could not get full before result of run.py because of the humongous size of the extended blob string (210,000+ tokens in a while loop). It took too much time and froze execution. In test_question2.py baseline cost for 1 ticket was > 70,000 points.
+
+After:
+{
+  "resolutions": [
+    {
+      "ticket_id": "T-1001",
+      "action": "REFUND",
+      "kb_article": "returns-within-30-days"
+    },
+    {
+      "ticket_id": "T-1002",
+      "action": "SEND_ARTICLE",
+      "kb_article": "digital-license-no-refund"
+    },
+    {
+      "ticket_id": "T-1003",
+      "action": "ESCALATE_TIER2",
+      "kb_article": "custom-items-no-replace"
+    },
+    {
+      "ticket_id": "T-1004",
+      "action": "REPLACE",
+      "kb_article": "damage-replacement-7-days"
+    }
+  ],
+  "total_points": 6762
+}
+
+
+=== Question 2 Breakdown: T-1001 (Physical Fulfillment Path) ===
+Input tokens:        373 (pts: 1119)
+Output tokens:       46 (pts: 690)
+Total points:        1809
+
+=== Question 2 Breakdown: T-1002 (Denial / Policy Send Path) ===
+Input tokens:        368 (pts: 1104)
+Output tokens:       39 (pts: 585)
+Total points:        1689
+
+-----------------------------------------------------------------------------------------------------------
+
+Architectural Suggestions Beyond The Questions
+
+1. True Embedding-based RAG (shared/kb.py):
+   Instead of dumping articles into the prompt, index KB articles using vector embeddings. At query time, retrieve only top-1 or top-2 relevant articles. This scales cleanly to thousands of articles.
+
+2. Semantic Response Caching:
+   Hash order facts and customer intent. Identical ticket profiles can be served from cache without invoking the LLM.
+
+3. Native Structured Outputs:
+   Use JSON schema enforcement (e.g. response_format) instead of regex parsing, ensuring compact generation and preventing prompt injection.

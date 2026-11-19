@@ -41,25 +41,19 @@ class SupportPipeline:
         return TicketResolution(parsed.action, parsed.kb_article)
 
     def _triage(self, ticket_id: str, thread: str, snapshot: str) -> str:
-        # messages = [
-        #     ChatMessage(
-        #         "system",
-        #         "\n".join(
-        #             [
-        #                 # f"trace-{uuid.uuid4()}",
-        #                 "Triage node: list candidate kb articles.",
-        #                 f"ARTICLE TITLES:\n{title_index(500)}",
-        #                 # self.help_center[:120_000],
-        #             ]
-        #         ),
-        #     ),
-        #     ChatMessage(
-        #         "user",
-        #         f"TICKET {ticket_id}\nTHREAD:\n{thread}\nORDER_SNAPSHOT:\n{snapshot}\nEND_SNAPSHOT",
-        #     ),
-        # ]
-        # return self.llm.chat("triage", messages)
-        return f"Triage {ticket_id}: check customer thread and order snapshot."
+        text = thread.lower()
+        if "license" in text or "digital" in text or "ebook" in text:
+            tag = "DIGITAL_LICENSE"
+        elif "crack" in text or "damage" in text or "broken" in text or "replace" in text:
+            tag = "DAMAGE_REPLACEMENT"
+        elif "subscription" in text or "renew" in text:
+            tag = "SUBSCRIPTION"
+        elif "return" in text or "refund" in text:
+            tag = "STANDARD_RETURN"
+        else:
+            tag = "GENERAL"
+        return f"TICKET {ticket_id} | CATEGORY: {tag}"
+
 
     def _retrieve(self, triage: str, snapshot: str) -> str:
         # messages = [
@@ -113,25 +107,12 @@ class SupportPipeline:
         retrieved: str,
         draft: str,
     ) -> str:
-        return draft
-        # messages = [
-        #     ChatMessage(
-        #         "system",
-        #         "Audit node: rewrite JSON output.",
-        #     ),
-        #     ChatMessage(
-        #         "user",
-        #         "\n\n".join(
-        #             [
-        #                 # self.help_center[:80_000],
-        #                 f"TICKET {ticket_id}",
-        #                 f"THREAD:\n{thread}",
-        #                 f"ORDER_SNAPSHOT:\n{snapshot}\nEND_SNAPSHOT",
-        #                 f"DRAFT:\n{draft}",
-        #                 f"TRIAGE:\n{triage}",
-        #                 f"ARTICLES:\n{retrieved}",
-        #             ]
-        #         ),
-        #     ),
-        # ]
-        # return self.llm.chat("audit", messages)
+        try:
+            parsed = parse_resolution(draft)
+            valid_actions = {"REFUND", "REPLACE", "SEND_ARTICLE", "ESCALATE_TIER2"}
+            if parsed.action not in valid_actions or not parsed.kb_article:
+                raise ValueError("Invalid action or missing kb_article")
+            return draft
+        except Exception:
+            # Fallback safety if the model returned malformed output
+            return '{"action": "ESCALATE_TIER2", "kb_article": "returns-within-30-days"}'
